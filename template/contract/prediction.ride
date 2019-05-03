@@ -1,39 +1,12 @@
-# In this example multiple accounts can deposit their funds and safely take them back, no one can interfere with this.
-# An inner state is maintained as mapping `address=>waves`.
-
-# You can try this contract by following commands in the IDE (ide.wavesplatform.com)
-# Run commands as listed below
-# broadcast(invokeScript({dappAddress: address(env.accounts[6]), call:{function:"createMarket",
-# args:[{type:"string", value: "First Market"}, {type:"string", value: "First Market Desc"},
-# {type:"string", value: "3N22gvbTKHefh2qCfkcuaUX1kyv1NPdGGLC"}, {type:"integer", value: 3}]}, payment: []}))
-#
-# broadcast(invokeScript({dappAddress: address(env.accounts[6]), call:{function:"setOrderLimitSell", args:[{type:"string", value: "19_592006_3MqyL7JckZ9hC4G2fU2JPtKSXppQF27VCsr"}, {type:"integer", value: "55"}, {type:"integer", value: 5}]}, payment: []}))
-# broadcast(invokeScript({dappAddress: address(env.accounts[6]), call:{function:"setOrderMarketBuy", args:[{type:"string", value: "19_592006_3MqyL7JckZ9hC4G2fU2JPtKSXppQF27VCsr"}, {type:"integer", value: "55"}, {type:"integer", value: 5}]}, payment: []}))
-# https://waves-prediction-market-demo.herokuapp.com/
-
 {-# STDLIB_VERSION 3 #-}
 {-# CONTENT_TYPE DAPP #-}
 {-# SCRIPT_TYPE ACCOUNT #-}
 
-let COUNTER = "cnt"
-let S = "_"
-let FREEZED = "freezed"
-let SHARES = "shares"
-let MARKETSTATUS = "mktstatus"
-let ORDERSTATUS = "ordstatus"
-let ORDEROWNER = "ordowner"
-let LASTBLOCK = "lastblock"
-let REPORTER = "reporter"
-let ACTIONBUY = "b"
-let ACTIONSELL = "s"
-let NEW = "new"
-let ACTIVE = "active"
-let CLOSED = "closed"
-let ORDER = "ord"
-let DEFAULTBLOCKSDELAY = 5
-let DEFAULTPRICE = 1000000
-let CLOSEDYES = "closed_yes"
-let CLOSEDNO = "closed_no"
+# TCR implementation with commit-reveal scheme
+let maxVoters = 3
+let majorityCnt = 2
+let newItemFee = 50000000
+let voteItemFee = 15000000
 
 @Callable(i)
 func deposit() = {
@@ -46,7 +19,9 @@ func deposit() = {
             case _ => 0
         }
         let newAmount = currentAmount + pmt.amount
-        WriteSet([DataEntry(currentKey, newAmount)])
+        WriteSet([
+            DataEntry(currentKey, newAmount)
+        ])
    }
 }
 
@@ -69,224 +44,174 @@ func withdraw(amount: Int) = {
     }
 
 @Callable(i)
-func createMarket(title: String, description: String, oracle: String, interval: Int) = {
-    let currentKey = toBase58String(i.caller.bytes)
-    let counter = match getInteger(this, COUNTER) {
-        case a:Int => a
-        case _ => 0
+func addItem(itemId: String) = {
+    let currentAcc = toBase58String(i.caller.bytes)
+    let currentAmount = match getInteger(this, currentAcc) {
+            case a:Int => a
+            case _ => 0
     }
-    let marketIdKey = toString(counter) + S + toString(height) + S + currentKey
-    let lastBlockKey = marketIdKey + S + LASTBLOCK
-    WriteSet(
-        [
-            DataEntry(COUNTER, counter + 1 ),
-            DataEntry("market_n_" + toString(counter), marketIdKey ),
-            DataEntry(marketIdKey + S + REPORTER, oracle),
-            DataEntry(marketIdKey + S + MARKETSTATUS, ACTIVE),
-            DataEntry(lastBlockKey, height + interval),
-            DataEntry(marketIdKey + S + "title", title),
-            DataEntry(marketIdKey + S + "description", description)
+    let noMark = "no"
+    let item = match getString(this, currentAcc) {
+            case a:String => a
+            case _ => noMark
+    }
+    if (currentAmount < newItemFee)
+        then throw("Not enough funds to add new item")
+    else if (item != noMark)
+        then throw("An item is already exist")
+    else WriteSet([
+        DataEntry(currentAcc, currentAmount - newItemFee),
+        DataEntry("author_" + itemId, currentAcc),
+        DataEntry("block_" + itemId, height),
+        DataEntry("bank_" + itemId, newItemFee),
+        DataEntry("status_" + itemId, "new")
     ])
 }
 
 @Callable(i)
-func setOrderLimitSell(marketId: String, price: Int, volume: Int) = {
-    let currentKey = toBase58String(i.caller.bytes)
-    let currentFreezedBalanceKey = marketId + S + currentKey + S + FREEZED
-    let orderSybKey = ORDER + S + marketId + S + toString(price) + S + toString(volume)
-    let orderKey = orderSybKey + S + ACTIONSELL
-    let orderStatusKey = orderKey + S + ORDERSTATUS
-    let orderOwnerKey = orderKey + S + ORDEROWNER
-    let adjustedAmount = volume*DEFAULTPRICE
-    let currentAmount = match getInteger(this, currentKey) {
+func vote_commit(itemId: String, voteHash: String) = {
+    let currentAcc = toBase58String(i.caller.bytes)
+    let currentAmount = match getInteger(this, currentAcc) {
             case a:Int => a
             case _ => 0
-        }
-    let freezedBalance = match getInteger(this, currentFreezedBalanceKey) {
+    }
+    let noMark = "no"
+    let item = match getString(this, currentAcc) {
+            case a:String => a
+            case _ => noMark
+    }
+    let bankKey = "bank_" + itemId
+    let bank = match getInteger(this, bankKey) {
             case a:Int => a
             case _ => 0
-        }
-    let status = match getString(this, orderStatusKey) {
-        case a:String => a
-        case _ => NEW
     }
-    let lastBlockKey = marketId + S + LASTBLOCK
-    let lastblock = match getInteger(this, lastBlockKey) {
-        case a:Int => a
-        case _ => 0
+    let statusKey = "status_" + itemId
+    let status = match getString(this, statusKey) {
+            case a:String => a
+            case _ => noMark
     }
-    if (height > lastblock)
-        then throw("Can't create an order after market finished")
-    else if (status == ACTIVE)
-        then throw("An order already exist")
-    else if (currentAmount < adjustedAmount)
-        then throw("Not enough funds")
-    else
-            WriteSet([
-                DataEntry(currentKey, currentAmount - adjustedAmount),
-                DataEntry(currentFreezedBalanceKey, freezedBalance + adjustedAmount),
-                DataEntry(orderStatusKey, ACTIVE),
-                DataEntry(orderOwnerKey, currentKey)
-            ])
+    let nCommitsKey = "ncommits_" + itemId
+    let nCommits = match getInteger(this, nCommitsKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let commitKey = "commit_" + itemId + "_" + currentAcc
+    let commit = match getString(this, commitKey) {
+            case a:String => a
+            case _ => noMark
+    }
+    if (currentAmount < voteItemFee)
+        then throw("Not enough funds to vote for a new item")
+    else if (item == noMark)
+        then throw("An item doesn't exist")
+    else if (status != "new" && status != "voting_commit")
+        then throw("Wrong item status for 'commit' action")
+    else if (nCommits >= maxVoters)
+        then throw("No more voters for this item")
+    else if (commit != noMark)
+        then throw("Can't vote twice")
+    else WriteSet([
+        DataEntry(currentAcc, currentAmount - voteItemFee),
+        DataEntry(bankKey, bank + voteItemFee),
+        DataEntry(statusKey, "voting_commit"),
+        DataEntry(commitKey, voteHash),
+        DataEntry(nCommitsKey, nCommits + 1)
+    ])
 }
 
 @Callable(i)
-func setOrderMarketBuy(marketId: String, price: Int, volume: Int) = {
-    let currentKey = toBase58String(i.caller.bytes)
-    let currentSharesBalanceKey = marketId + S + currentKey + S + SHARES
-    let orderSybKey = ORDER + S + marketId + S + toString(price) + S + toString(volume)
-    let orderKey = orderSybKey + S + ACTIONBUY
-    let contrOrderKey = orderSybKey + S + ACTIONSELL
-    let contrOrderStatusKey = contrOrderKey + S + ORDERSTATUS
-    let contrOrderOwnerKey = contrOrderKey + S + ORDEROWNER
-    let currentAmount = match getInteger(this, currentKey) {
-            case a:Int => a
-            case _ => 0
-        }
-    let sharesBalance = match getInteger(this, currentSharesBalanceKey) {
-            case a:Int => a
-            case _ => 0
-        }
-    let contrStatus = match getString(this, contrOrderStatusKey) {
-        case a:String => a
-        case _ => NEW
+func vote_reveal(itemId: String, voteResult: String, salt: String) = {
+    let preCommit = voteResult + salt
+    let rideCommitHash = toBase58String(sha256(toBytes(preCommit)))
+    let currentAcc = toBase58String(i.caller.bytes)
+    let noMark = "no"
+    let commitKey = "commit_" + itemId + "_" + currentAcc
+    let voteHash = match getString(this, commitKey) {
+            case a:String => a
+            case _ => noMark
     }
-    let contrOwner = match getString(this, contrOrderOwnerKey) {
-        case a:String => a
-        case _ => NEW
+    let statusKey = "status_" + itemId
+    let status = match getString(this, statusKey) {
+            case a:String => a
+            case _ => noMark
     }
-    let contrCurrentAmount = match getInteger(this, contrOwner) {
+    let revealKey = "reveal_" + itemId + "_" + currentAcc
+    let reveal = match getString(this, revealKey) {
+            case a:String => a
+            case _ => noMark
+    }
+    let yesKey = "cnt_yes_" + itemId
+    let yesCnt = match getInteger(this, yesKey) {
             case a:Int => a
             case _ => 0
-        }
-    let contrCurrentSharesBalanceKey = marketId + S + contrOwner + S + SHARES
-    let contrSharesBalance = match getInteger(this, contrCurrentSharesBalanceKey) {
+    }
+    let noKey = "cnt_no_" + itemId
+    let noCnt = match getInteger(this, yesKey) {
             case a:Int => a
             case _ => 0
-        }
-    let lastblock = match getInteger(this, marketId + S + LASTBLOCK) {
-        case a:Int => a
-        case _ => 0
     }
-    let adjustedAmount = volume*price*(DEFAULTPRICE/100)
-    if (height > lastblock)
-        then throw("Can't execute an order after market finished")
-    else if (contrStatus != ACTIVE)
-        then throw("A counter-order doesn't exist yet")
-    else if (currentAmount < volume*price)
-        then throw("Not enough funds")
-    else
-            WriteSet([
-                DataEntry(currentKey, currentAmount - adjustedAmount),
-                DataEntry(currentSharesBalanceKey, sharesBalance + volume),
-                DataEntry(contrOrderStatusKey, CLOSED),
-                DataEntry(contrOwner, contrCurrentAmount + adjustedAmount),
-                DataEntry(contrCurrentSharesBalanceKey, contrSharesBalance - volume)
-            ])
+    let yesDelta = if(voteResult == "1") then 1 else 0
+    let noDelta = if(voteResult == "0") then 1 else 0
+    if (voteHash == noMark)
+        then throw("There is no commit yet")
+    else if (voteHash != rideCommitHash)
+        then throw("Hashes don't match")
+    else if (status != "voting_commit" && status != "voting_reveal")
+        then throw("Wrong item status for 'reveal' action")
+    else if (reveal != noMark)
+        then throw("Can't vote twice")
+    else if (voteResult != "1" && voteResult != "0")
+        then throw("Bad vote result format")
+    else WriteSet([
+        DataEntry(statusKey, "voting_reveal"),
+        DataEntry(revealKey, voteResult),
+        DataEntry(yesKey, yesCnt + yesDelta),
+        DataEntry(noKey, noCnt + noDelta)
+    ])
 }
 
-@Callable(i)
-func reportMarket(marketId: String, result: String) = {
-    let reporter = toBase58String(i.caller.bytes)
-    let reporterKey = marketId + S + REPORTER
-    let lastBlockKey = marketId + S + LASTBLOCK
-    let marketStatusKey = marketId + S + MARKETSTATUS
-    let marketReporter = match getString(this, reporterKey) {
-        case a:String => a
-        case _ => NEW
+@Callable()
+func check_results(itemId: String, account: String) = {
+    let statusKey = "status_" + itemId
+    let revealKey = "reveal_" + itemId + "_" + account
+    let rewardKey = "reward_" + itemId + "_" + account
+    let reward = match getString(this, revealKey) {
+            case a:String => a
+            case _ => noMark
     }
-    let marketStatus = match getString(this, marketStatusKey) {
-        case a:String => a
-        case _ => NEW
+    let reveal = match getString(this, revealKey) {
+            case a:String => a
+            case _ => noMark
     }
-    let lastblock = match getInteger(this, lastBlockKey) {
-        case a:Int => a
-        case _ => 0
-    }
-    if (marketReporter != reporter)
-        then throw("You are not reporter for this market")
-    else if (marketStatus != ACTIVE)
-        then throw("Market isn't active")
-    else if (height < lastblock)
-        then throw("Too early to report market")
-    else if (height > lastblock + DEFAULTBLOCKSDELAY)
-        then throw("Too late to report market")
-    else if (result != CLOSEDYES && result != CLOSEDNO)
-        then throw("Bad report result format")
-    else
-            WriteSet([
-                DataEntry(marketStatusKey, result)
-            ])
-}
-@Callable(i)
-func claimFundsResultYes(marketId: String, account: String) = {
-    let callerAdress = account
-    let currentSharesBalanceKey = marketId + S + callerAdress + S + SHARES
-    let currentFreezedBalanceKey = marketId + S + callerAdress + S + FREEZED
-    let marketStatusKey = marketId + S + MARKETSTATUS
-    let marketStatus = match getString(this, marketStatusKey) {
-        case a:String => a
-        case _ => NEW
-    }
-    let freezedBalance = match getInteger(this, currentFreezedBalanceKey) {
+    let yesKey = "cnt_yes_" + itemId
+    let yesCnt = match getInteger(this, yesKey) {
             case a:Int => a
             case _ => 0
-        }
-    let sharesBalance = match getInteger(this, currentSharesBalanceKey) {
-            case a:Int => a
-            case _ => 0
-        }
-    let currentAmount = match getInteger(this, callerAdress) {
-            case a:Int => a
-            case _ => 0
-        }
-    if (marketStatus != CLOSEDYES)
-        then throw("claimFundsResultYes - wrong market result")
-    else if (freezedBalance == 0 && sharesBalance == 0)
-        then throw("You can't claim funds for market and account")
-    else
-            WriteSet([
-                DataEntry(callerAdress, currentAmount + sharesBalance*DEFAULTPRICE + freezedBalance),
-                DataEntry(currentSharesBalanceKey, 0),
-                DataEntry(currentFreezedBalanceKey, 0)
-            ])
-}
-@Callable(i)
-func claimFundsResultNo(marketId: String, account: String) = {
-    let callerAdress = account
-    let currentSharesBalanceKey = marketId + S + callerAdress + S + SHARES
-    let currentFreezedBalanceKey = marketId + S + callerAdress + S + FREEZED
-    let marketStatusKey = marketId + S + MARKETSTATUS
-    let lastBlockKey = marketId + S + LASTBLOCK
-    let marketStatus = match getString(this, marketStatusKey) {
-        case a:String => a
-        case _ => NEW
     }
-    let freezedBalance = match getInteger(this, currentFreezedBalanceKey) {
+    let noKey = "cnt_no_" + itemId
+    let noCnt = match getInteger(this, yesKey) {
             case a:Int => a
             case _ => 0
-        }
-    let sharesBalance = match getInteger(this, currentSharesBalanceKey) {
-            case a:Int => a
-            case _ => 0
-        }
-    let currentAmount = match getInteger(this, callerAdress) {
-            case a:Int => a
-            case _ => 0
-        }
-
-    let lastblock = match getInteger(this, lastBlockKey) {
-        case a:Int => a
-        case _ => 0
     }
-    if (marketStatus == CLOSEDYES || height <= lastblock + DEFAULTBLOCKSDELAY )
-        then throw("claimFundsResultNo - wrong market result or time")
-    else if (freezedBalance == 0 && sharesBalance == 0)
-        then throw("You can't claim funds for market and account")
-    else
-            WriteSet([
-                DataEntry(callerAdress, currentAmount + freezedBalance),
-                DataEntry(currentSharesBalanceKey, 0),
-                DataEntry(currentFreezedBalanceKey, 0)
-            ])
+    let currentAmount = match getInteger(this, account) {
+            case a:Int => a
+            case _ => 0
+    }
+    let finalStatus = if ( yesCnt >= majorityCnt ) then "accepted" else "declined"
+    let isWinner = if( ( reveal == "1" && yesCnt >= majorityCnt ) || ( reveal == "0" && noCnt >= majorityCnt ) ) then 1 else 0
+    let rewardStatus = if ( isWinner == 1 ) then "winner" else "looser"
+    let nWinners = if ( yesCnt >= majorityCnt ) then yesCnt else noCnt
+    let nLoosers = maxVoters - nWinners
+    let profit = isWinner*(voteItemFee + (nLoosers*voteItemFee + newItemFee)/nWinners)
+    if (yesCnt + noCnt < maxVoters)
+        then throw("The voting hasn't finished yet")
+    else if (reveal == noMark)
+        then throw("Account hasn't participated in voting")
+    else if (reward != noMark)
+        then throw("This account has been checked")
+    else WriteSet([
+        DataEntry(statusKey, finalStatus),
+        DataEntry(account, currentAmount + profit),
+        DataEntry(rewardKey, rewardStatus),
+    ])
 }
