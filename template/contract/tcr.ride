@@ -3,6 +3,8 @@
 {-# SCRIPT_TYPE ACCOUNT #-}
 
 # TCR implementation with commit-reveal scheme
+# broadcast(invokeScript({dappAddress: address(env.accounts[6]), call:{function:"setOrderLimitSell", args:[{type:"string", value: "19_592006_3MqyL7JckZ9hC4G2fU2JPtKSXppQF27VCsr"}, {type:"integer", value: "55"}, {type:"integer", value: 5}]}, payment: []}))
+
 let maxVoters = 3
 let majorityCnt = 2
 let newItemFee = 50000000
@@ -69,17 +71,13 @@ func addItem(itemId: String) = {
 }
 
 @Callable(i)
-func vote_commit(itemId: String, voteHash: String) = {
+func voteCommit(itemId: String, voteHash: String) = {
     let currentAcc = toBase58String(i.caller.bytes)
     let currentAmount = match getInteger(this, currentAcc) {
             case a:Int => a
             case _ => 0
     }
     let noMark = "no"
-    let item = match getString(this, currentAcc) {
-            case a:String => a
-            case _ => noMark
-    }
     let bankKey = "bank_" + itemId
     let bank = match getInteger(this, bankKey) {
             case a:Int => a
@@ -102,7 +100,7 @@ func vote_commit(itemId: String, voteHash: String) = {
     }
     if (currentAmount < voteItemFee)
         then throw("Not enough funds to vote for a new item")
-    else if (item == noMark)
+    else if (status == noMark)
         then throw("An item doesn't exist")
     else if (status != "new" && status != "voting_commit")
         then throw("Wrong item status for 'commit' action")
@@ -120,7 +118,7 @@ func vote_commit(itemId: String, voteHash: String) = {
 }
 
 @Callable(i)
-func vote_reveal(itemId: String, voteResult: String, salt: String) = {
+func voteReveal(itemId: String, voteResult: String, salt: String) = {
     let preCommit = voteResult + salt
     let rideCommitHash = toBase58String(sha256(toBytes(preCommit)))
     let currentAcc = toBase58String(i.caller.bytes)
@@ -146,7 +144,7 @@ func vote_reveal(itemId: String, voteResult: String, salt: String) = {
             case _ => 0
     }
     let noKey = "cnt_no_" + itemId
-    let noCnt = match getInteger(this, yesKey) {
+    let noCnt = match getInteger(this, noKey) {
             case a:Int => a
             case _ => 0
     }
@@ -170,12 +168,13 @@ func vote_reveal(itemId: String, voteResult: String, salt: String) = {
     ])
 }
 
-@Callable()
-func check_results(itemId: String, account: String) = {
+@Callable(i)
+func checkResults(itemId: String, account: String) = {
     let statusKey = "status_" + itemId
     let revealKey = "reveal_" + itemId + "_" + account
     let rewardKey = "reward_" + itemId + "_" + account
-    let reward = match getString(this, revealKey) {
+    let noMark = "no"
+    let reward = match getString(this, rewardKey) {
             case a:String => a
             case _ => noMark
     }
@@ -189,7 +188,7 @@ func check_results(itemId: String, account: String) = {
             case _ => 0
     }
     let noKey = "cnt_no_" + itemId
-    let noCnt = match getInteger(this, yesKey) {
+    let noCnt = match getInteger(this, noKey) {
             case a:Int => a
             case _ => 0
     }
@@ -212,6 +211,6 @@ func check_results(itemId: String, account: String) = {
     else WriteSet([
         DataEntry(statusKey, finalStatus),
         DataEntry(account, currentAmount + profit),
-        DataEntry(rewardKey, rewardStatus),
+        DataEntry(rewardKey, rewardStatus)
     ])
 }
