@@ -7,8 +7,8 @@
 
 let maxVoters = 3
 let majorityCnt = 2
-let newItemFee = 50000000
-let voteItemFee = 15000000
+let newItemFee = 500000000/100
+let voteItemFee = 150000000/100
 
 @Callable(i)
 func deposit() = {
@@ -148,12 +148,19 @@ func voteReveal(itemId: String, voteResult: String, salt: String) = {
             case a:Int => a
             case _ => 0
     }
+    let nCommitsKey = "ncommits_" + itemId
+    let nCommits = match getInteger(this, nCommitsKey) {
+            case a:Int => a
+            case _ => 0
+    }
     let yesDelta = if(voteResult == "1") then 1 else 0
     let noDelta = if(voteResult == "0") then 1 else 0
     if (voteHash == noMark)
         then throw("There is no commit yet")
     else if (voteHash != rideCommitHash)
         then throw("Hashes don't match")
+    else if (nCommits < maxVoters)
+        then throw("It's still commit stage")
     else if (status != "voting_commit" && status != "voting_reveal")
         then throw("Wrong item status for 'reveal' action")
     else if (reveal != noMark)
