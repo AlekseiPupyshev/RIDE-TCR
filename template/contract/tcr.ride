@@ -246,7 +246,7 @@ func checkResults(itemId: String, account: String) = {
 }
 
 @Callable(i)
-func expiredChallenge(itemId: String, account: String) = {
+func closeExpiredChallenge(itemId: String, account: String) = {
     let statusKey = "status_" + itemId
     let noMark = "no"
     let status = match getString(this, statusKey) {
@@ -305,3 +305,45 @@ func expiredChallenge(itemId: String, account: String) = {
         DataEntry(rewardKey, "expired")
     ])
 }
+
+# Donate or challenge projects
+# |new item|--(t)-->|accepted|--(t)-->|crowdfunded|--(t)-->|   whale|
+# ....................................................|___>| expired|
+let tiers = [10, 50, 250, 1250, 6250]
+@Callable(i)
+func donateProject(itemId: String, tier: String, mode: String, review: String) = {
+    let currentAcc = toBase58String(i.caller.bytes)
+    let positiveFundKey = "positive_fund_" + itemId
+    let positiveFund = match getInteger(this, positiveFundKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let negativeFundKey = "negative_fund_" + itemId
+    let negativeFund = match getInteger(this, negativeFundKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let accNegativeFundKey = negativeFundKey + "_" + currentAcc
+    let accNegativeFund = match getInteger(this, accNegativeFundKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let accPositiveFundKey = positiveFundKey + "_" + currentAcc
+    let accPositiveFund = match getInteger(this, accPositiveFundKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let crowdfundingEndKey = "crowdfunding_end_" + itemId
+    let crowdfundingEnd = match getInteger(this, crowdfundingEndKey) {
+            case a:Int => a
+            case _ => 0
+    }
+}
+
+@Callable(i)
+func whaleBuyout(itemId: String, ) = {
+
+}
+
+
+
