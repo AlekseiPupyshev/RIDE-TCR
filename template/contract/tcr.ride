@@ -143,10 +143,6 @@ func voteReveal(itemId: String, voteResult: String, salt: String) = {
             case _ => noMark
     }
     let statusKey = "status_" + itemId
-    let status = match getString(this, statusKey) {
-            case a:String => a
-            case _ => noMark
-    }
     let revealKey = "reveal_" + itemId + "_" + currentAcc
     let reveal = match getString(this, revealKey) {
             case a:String => a
@@ -311,7 +307,7 @@ func closeExpiredChallenge(itemId: String, account: String) = {
 # ....................................................|___>| expired|
 let tiers = [10, 50, 250, 1250, 6250]
 @Callable(i)
-func donateProject(itemId: String, tier: String, mode: String, review: String) = {
+func donateProject(itemId: String, tier: Int, mode: String, review: String) = {
     let currentAcc = toBase58String(i.caller.bytes)
     let positiveFundKey = "positive_fund_" + itemId
     let positiveFund = match getInteger(this, positiveFundKey) {
@@ -328,6 +324,11 @@ func donateProject(itemId: String, tier: String, mode: String, review: String) =
             case a:Int => a
             case _ => 0
     }
+    let accReviewsCounterKey = "reviews_cnt_" + itemId + "_" + currentAcc
+    let accReviewsCounter = match getInteger(this, accReviewsCounterKey) {
+            case a:Int => a
+            case _ => 0
+    }
     let accPositiveFundKey = positiveFundKey + "_" + currentAcc
     let accPositiveFund = match getInteger(this, accPositiveFundKey) {
             case a:Int => a
@@ -338,12 +339,158 @@ func donateProject(itemId: String, tier: String, mode: String, review: String) =
             case a:Int => a
             case _ => 0
     }
+    let amount = tiers[tier-1]
+    let reviewKey = "review_" + itemId + "_" + currentAcc
+    let statusKey = "status_" + itemId
+    let status = match getString(this, statusKey) {
+            case a:String => a
+            case _ => noMark
+    }
+    let expirationCrowdfundingKey = "expiration_funding_" + itemId
+    let expirationCrowdfunding = match getInteger(this, expirationCrowdfundingKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    if (status != "accepted")
+        then throw("The project isn't accepted by community")
+    else if (height >= expirationCrowdfunding)
+        then throw("The time for crowdfunding has expired")
+    else if (mode != "positive" && mode != "negative")
+        then throw("Wrong mode parameter")
+    else if (currentAmount <= amount)
+        then throw("Insufficient funds for crowdfunding transfer. Please deposit more funds to the dApp")
+    else WriteSet([
+        DataEntry(accReviewsCounterKey, accReviewsCounter + 1),
+        DataEntry(statusKey, "crowdfunding"),
+        DataEntry(account, currentAmount - amount),
+        DataEntry(accPositiveFundKey, accPositiveFund + (if (mode == "positive") then 1 else 0)*amount),
+        DataEntry(accNegativeFundKey, accNegativeFund + (if (mode == "negative") then 1 else 0)*amount),
+        DataEntry(crowdfundingEndKey, crowdfundingEnd + amount),
+        DataEntry(reviewKey + "_text_id:" + accReviewsCounter, review),
+        DataEntry(reviewKey + "_mode_id:" + accReviewsCounter, mode),
+        DataEntry(reviewKey + "_tier_id:" + accReviewsCounter, tier),
+        DataEntry(reviewKey + "_fund_id:" + accReviewsCounter, amount)
+    ])
 }
-
+let multiplier = 150
 @Callable(i)
-func whaleBuyout(itemId: String, ) = {
+func whaleBuyout(itemId: String) = {
+    let pmt = extract(i.payment)
+    if (isDefined(pmt.assetId)) then throw("can hodl waves only at the moment")
+    let positiveFundKey = "positive_fund_" + itemId
+    let positiveFund = match getInteger(this, positiveFundKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    if (positiveFund == 0) then throw("No funds for this project")
+    let requiredAmount = (multiplier*positiveFund)/100
+    if (pmt.amount < requiredAmount) then throw("Not enough funds to buyout this project")
+    let author = match getInteger(this, "author_" + itemId) {
+            case a:Int => a
+            case _ => 0
+    }
+    let amount = match getInteger(this, author) {
+            case a:Int => a
+            case _ => 0
+    }
+    let statusKey = "status_" + itemId
+    let buyoutAmountKey = "buyout_amount_" + itemId
+    WriteSet([
+        DataEntry(author, amount + positiveFund),
+        DataEntry(reviewKey + "_fund_id:" + accReviewsCounter, amount),
+        DataEntry(reviewKey + "_fund_id:" + accReviewsCounter, amount),
+        DataEntry(statusKey, "buyout"),
+        DataEntry(buyoutAmountKey, pmt.amount)
+    ])
+}
+func claimWinnings(itemId: String, account: String) = {
+    let positiveFundKey = "positive_fund_" + itemId
+    let positiveFund = match getInteger(this, positiveFundKey) {
+            case a:Int => a
+            case _ => 1
+    }
+    if (positiveFund == 0) then throw("There is no funds")
+    let negativeFundKey = "negative_fund_" + itemId
+    let negativeFund = match getInteger(this, negativeFundKey) {
+            case a:Int => a
+            case _ => 1
+    }
+    let accPositiveFundKey = positiveFundKey + "_" + currentAcc
+    let accPositiveFund = match getInteger(this, accPositiveFundKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let accNegativeFundKey = negativeFundKey + "_" + currentAcc
+    let accNegativeFund = match getInteger(this, accNegativeFundKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let buyoutAmountKey = "buyout_amount_" + itemId
+    let buyoutAmount = match getInteger(this, buyoutAmountKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let expirationCrowdfundingKey = "expiration_funding_" + itemId
+    let expirationCrowdfunding = match getInteger(this, expirationCrowdfundingKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let statusKey = "status_" + itemId
+    let status = match getString(this, statusKey) {
+            case a:String => a
+            case _ => noMark
+    }
+    if (status != "buyout" && height < expirationCrowdfunding) then throw("Crowdfunding is in progress now")
+    let isBayout = if (status == "buyout") then 1 else 0
+    let isCrowdf = if (height >= expirationCrowdfunding) then 1 else 0
+    let share = isBayout*(accPositiveFund*100)/positiveFund + isCrowdf*(accNegativeFund*100)/negativeFund
+    let tmpNegFWin = (negativeFund*multiplier)/100
+    let betProfit = isBayout*((share*negativeFund)/100) + isCrowdf*(share*(if (tmpNegFWin < positiveFund) then tmpNegFWin else positiveFund))/100
+    let roiProfit = isBayout*((share*buyoutAmount)/100)
+    let amount = match getInteger(this, account) {
+            case a:Int => a
+            case _ => 0
+    }
+    let author = match getString(this, "author_" + itemId) {
+            case a:String => a
+            case _ => noMarks
+    }
+    let authorAmount = match getInteger(this, author) {
+            case a:Int => a
+            case _ => 0
+    }
+    WriteSet([
+        DataEntry(account, amount + betProfit + roiProfit)
+    ])
+}
+@Callable(i)
+func closeExpiredCrowdfunding(itemId: String) = {
+    let statusKey = "status_" + itemId
+    let status = match getString(this, statusKey) {
+            case a:String => a
+            case _ => noMark
+    }
+    let expirationCrowdfundingKey = "expiration_funding_" + itemId
+    let expirationCrowdfunding = match getInteger(this, expirationCrowdfundingKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    if (status == "crowdfunded") then throw("The function has already been called")
+    if (height < expirationCrowdfunding) then throw("Crowdfunding is in progress now")
+    let capToLoose = if (tmpNegFWin < positiveFund) then tmpNegFWin else positiveFund
+    let author = match getString(this, "author_" + itemId) {
+            case a:String => a
+            case _ => noMarks
+    }
+    let authorAmount = match getInteger(this, author) {
+            case a:Int => a
+            case _ => 0
+    }
+    WriteSet([
+        DataEntry(author, authorAmount + positiveFund - capToLoose),
+        DataEntry(statusKey, "crowdfunded")
+    ])
 
 }
-
 
 
