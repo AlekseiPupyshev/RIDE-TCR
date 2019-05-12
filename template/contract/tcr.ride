@@ -10,6 +10,59 @@ let majorityCnt = 2
 let newItemFee = 500000000/100
 let voteItemFee = 150000000/100
 
+let noMark = "no"
+
+let genesis = '3Ms9dv5wrt3kPXeT2g9yLM2LhS33CT7iuiQ'
+
+@Callable(i)
+func inviteUser(account: String) = {
+    let currKey = toBase58String(i.caller.bytes)
+    let refKey = "wl_ref_" + account
+    let ref = match getString(this, refKey) {
+        case a:String => a
+        case _ => noMark
+    }
+    let stsCurr = match getString(this, "wl_sts_" + currKey) {
+        case a:String => a
+        case _ => noMark
+    }
+    if (ref != noMark)
+        then throw("User has already been invited")
+    else if (stsCurr != "whitelisted" && stsCurr != genesis)
+        then throw("Your account should be whitelisted")
+    else {
+        WriteSet([
+            DataEntry(refKey, currKey)
+        ])
+    }
+}
+
+@Callable(i)
+func signUp(datajson: String) = {
+    let currKey = toBase58String(i.caller.bytes)
+    let stsKey = "wl_sts_" + currKey
+    let refKey = "wl_ref_" + currKey
+    let sts = match getString(this, stsKey) {
+        case a:String => a
+        case _ => noMark
+    }
+    let refInv = match getString(this, refKey) {
+        case a:String => a
+        case _ => noMark
+    }
+    if (sts != noMark)
+        then throw("User has already been whitelisted")
+    else if (refInv == noMark)
+        then throw("Referral invite needed")
+    else {
+        WriteSet([
+            DataEntry("wl_bio_" + currKey, datajson),
+            DataEntry("wl_blk_" + currKey, height),
+            DataEntry(stsKey, "whitelisted")
+        ])
+    }
+}
+
 @Callable(i)
 func deposit() = {
    let pmt = extract(i.payment)
@@ -46,13 +99,12 @@ func withdraw(amount: Int) = {
     }
 
 @Callable(i)
-func addItem(itemId: String, expirationABlock: Int) = {
+func addItem(itemId: String, expirationABlock: Int, expirationCrowdfunding: Int, expirationWhale: Int, projectDataJSON: String) = {
     let currentAcc = toBase58String(i.caller.bytes)
     let currentAmount = match getInteger(this, currentAcc) {
             case a:Int => a
             case _ => 0
     }
-    let noMark = "no"
     let item = match getString(this, currentAcc) {
             case a:String => a
             case _ => noMark
@@ -61,7 +113,7 @@ func addItem(itemId: String, expirationABlock: Int) = {
         then throw("Not enough funds to add new item")
     else if (item != noMark)
         then throw("An item is already exist")
-    else if (expirationABlock < 2)
+    else if (expirationABlock < 2 || expirationCrowdfunding < 3 || expirationWhale < 4)
         then throw("Incorrect time parameters")
     else WriteSet([
         DataEntry(currentAcc, currentAmount - newItemFee),
@@ -69,7 +121,10 @@ func addItem(itemId: String, expirationABlock: Int) = {
         DataEntry("block_" + itemId, height),
         DataEntry("expiration_block_" + itemId, height + expirationABlock),
         DataEntry("bank_" + itemId, newItemFee),
-        DataEntry("status_" + itemId, "new")
+        DataEntry("status_" + itemId, "new"),
+        DataEntry("jsondata_" + itemId, projectDataJSON),
+        DataEntry("expiration_funding_" + itemId, height + expirationCrowdfunding),
+        DataEntry("expiration_whale_" + itemId, height + expirationWhale)
     ])
 }
 
@@ -80,7 +135,6 @@ func voteCommit(itemId: String, voteHash: String) = {
             case a:Int => a
             case _ => 0
     }
-    let noMark = "no"
     let bankKey = "bank_" + itemId
     let bank = match getInteger(this, bankKey) {
             case a:Int => a
@@ -136,7 +190,6 @@ func voteReveal(itemId: String, voteResult: String, salt: String) = {
             case a:Int => a
             case _ => 0
     }
-    let noMark = "no"
     let commitKey = "commit_" + itemId + "_" + currentAcc
     let voteHash = match getString(this, commitKey) {
             case a:String => a
@@ -198,7 +251,6 @@ func checkResults(itemId: String, account: String) = {
     let statusKey = "status_" + itemId
     let revealKey = "reveal_" + itemId + "_" + account
     let rewardKey = "reward_" + itemId + "_" + account
-    let noMark = "no"
     let reward = match getString(this, rewardKey) {
             case a:String => a
             case _ => noMark
@@ -244,7 +296,6 @@ func checkResults(itemId: String, account: String) = {
 @Callable(i)
 func closeExpiredChallenge(itemId: String, account: String) = {
     let statusKey = "status_" + itemId
-    let noMark = "no"
     let status = match getString(this, statusKey) {
         case a:String => a
         case _ => noMark
@@ -301,10 +352,7 @@ func closeExpiredChallenge(itemId: String, account: String) = {
         DataEntry(rewardKey, "expired")
     ])
 }
-
-# Donate or challenge projects
-# |new item|--(t)-->|accepted|--(t)-->|crowdfunded|--(t)-->|   whale|
-# ....................................................|___>| expired|
+# TODO: 1. self voting, 2. white listing logic throw TCR :)
 let tiers = [10, 50, 250, 1250, 6250]
 @Callable(i)
 func donateProject(itemId: String, tier: Int, mode: String, review: String) = {
@@ -470,13 +518,13 @@ func closeExpiredCrowdfunding(itemId: String) = {
             case a:String => a
             case _ => noMark
     }
-    let expirationCrowdfundingKey = "expiration_funding_" + itemId
-    let expirationCrowdfunding = match getInteger(this, expirationCrowdfundingKey) {
+    let expirationWhaleCrowdfundingKey = "expiration_whale_" + itemId
+    let expirationWhaleCrowdfunding = match getInteger(this, expirationWhaleCrowdfundingKey) {
             case a:Int => a
             case _ => 0
     }
     if (status == "crowdfunded") then throw("The function has already been called")
-    if (height < expirationCrowdfunding) then throw("Crowdfunding is in progress now")
+    if (height < expirationWhaleCrowdfunding) then throw("Crowdfunding is in progress now. Waiting for whale")
     let capToLoose = if (tmpNegFWin < positiveFund) then tmpNegFWin else positiveFund
     let author = match getString(this, "author_" + itemId) {
             case a:String => a
