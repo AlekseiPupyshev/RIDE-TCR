@@ -12,7 +12,7 @@ let voteItemFee = 150000000/100
 
 let noMark = "no"
 
-let genesis = '3Ms9dv5wrt3kPXeT2g9yLM2LhS33CT7iuiQ'
+let genesis = "3Ms9dv5wrt3kPXeT2g9yLM2LhS33CT7iuiQ"
 
 @Callable(i)
 func inviteUser(account: String) = {
@@ -28,7 +28,7 @@ func inviteUser(account: String) = {
     }
     if (ref != noMark)
         then throw("User has already been invited")
-    else if (stsCurr != "whitelisted" && stsCurr != genesis)
+    else if (stsCurr != "whitelisted" && currKey != genesis)
         then throw("Your account should be whitelisted")
     else {
         WriteSet([
