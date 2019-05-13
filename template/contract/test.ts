@@ -2,8 +2,8 @@
 // https://github.com/wavesplatform/waves-transactions/blob/master/src/nodeInteraction.ts
 // https://journal.artfuldev.com/unit-testing-node-applications-with-typescript-using-mocha-and-chai-384ef05f32b2
 
-const seedWithWaves = "sheriff alpha feel salon prosper tackle bracket light mirror famous remind common" //3MtpzbrmeaTCVKkhUGcgZ2nHYPSYUbSfp5A
-const dappAddress = "3Ms9dv5wrt3kPXeT2g9yLM2LhS33CT7iuiQ"
+const seedWithWaves = "adapt lizard catalog quote palm enhance economy turkey universe cost excess risk" //3Ms9dv5wrt3kPXeT2g9yLM2LhS33CT7iuiQ
+const dappAddress = "3ND2GM4YopwijfEqWtFNPQtLfb6vUzXdtek"
 let amount = 5000000
 let FEE = 500000
 
@@ -26,7 +26,7 @@ describe('Test Initialisation', () => {
     }, defTimeout)
     it('Transfer funds forward', async function(){
         var txs = addresses.map(function(x){
-            return transfer({amount: 3*amount, recipient: x, fee: FEE}, seedWithWaves)
+            return transfer({amount: 4*amount, recipient: x, fee: FEE}, seedWithWaves)
         })
         var lastTx = undefined
         for (i = 0; i < txs.length; i++) {
@@ -144,7 +144,7 @@ describe('dApp Wallet test', () => {
             call:{
                 function:"deposit",
                 args:[]},
-                payment: [{amount: amount, asset:null }]
+                payment: [{amount: 2*amount, asset:null }]
             }, x)
         })
         var lastTx = undefined
@@ -212,7 +212,69 @@ let maxVoters = 3
 let majorityCnt = 2
 let newItemFee = amount
 let voteItemFee = Math.round(amount/3)
+let itemId = "tcr_item_id_" + Math.random()
+let itemData = JSON.stringify({
+    "title": "San Francisco Blockchain Week (SFBW) 2019",
+    "description": "San Francisco Blockchain Week is a week of free educational, consumer, and developer focused events that aim to push the boundaries of local blockchain ...",
+    "link": "https://sfblockchainweek.io/"
+})
 
-describe('TCR Test', () => {
+describe('TCR add new item test', async function(){
+    it('(!) Add new item from not whitelisted user', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"addItem",
+                args:[
+                    { type:"string", value: itemId},
+                    { type:"integer", value: 3},
+                    { type:"integer", value: 5},
+                    { type:"integer", value: 7},
+                    { type:"string", value: itemData}
+                ]},
+                payment: []
+            }, seeds[2])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+    it('Add new item from whitelisted user', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"addItem",
+                args:[
+                    { type:"string", value: itemId},
+                    { type:"integer", value: 3},
+                    { type:"integer", value: 5},
+                    { type:"integer", value: 7},
+                    { type:"string", value: itemData}
+                ]},
+                payment: []
+            }, seeds[1])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+})
+describe('TCR Test 2/3 YES', () => {
+    xit('Vote commits 2 YES', async function(){
 
+    })
+    xit('Vote commits 1 NO', async function(){
+
+    })
+    xit('Vote reveal NO', async function(){
+
+    })
+    xit('(!) Try to close voting before after NO reveal', async function(){
+
+    })
+    xit('Vote reveal 3 YES', async function(){
+
+    })
+    xit('(!) Try to close voting before all reveals', async function(){
+
+    })
+    xit('Check results', async function(){
+
+    })
 })
