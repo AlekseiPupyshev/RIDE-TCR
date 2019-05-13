@@ -26,7 +26,7 @@ describe('Test Initialisation', () => {
     }, defTimeout)
     it('Transfer funds forward', async function(){
         var txs = addresses.map(function(x){
-            return transfer({amount: 2*amount, recipient: x, fee: FEE}, seedWithWaves)
+            return transfer({amount: 3*amount, recipient: x, fee: FEE}, seedWithWaves)
         })
         var lastTx = undefined
         for (i = 0; i < txs.length; i++) {
@@ -136,6 +136,71 @@ describe('User Invitation', () => {
     })
 })
 
+describe('dApp Wallet test', () => {
+    it('Deposit works', async function(){
+        let txs = seeds.map(function(x){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"deposit",
+                args:[]},
+                payment: [{amount: amount, asset:null }]
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0+1; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+    it('Withdraw works', async function(){
+        let txs = seeds.map(function(x){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"withdraw",
+                args:[
+                    { type:"integer", value: amount}
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0+1; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+    it('(!) Withdraw more than balance', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"withdraw",
+                args:[
+                    { type:"integer", value: 2*amount}
+                ]},
+                payment: []
+            }, seeds[1])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+    it('(!) Withdraw from alien account', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"withdraw",
+                args:[
+                    { type:"integer", value: amount}
+                ]},
+                payment: []
+            }, seeds[0])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+})
+
 // # (GLOBALS) TCR implementation with commit-reveal scheme
 let noIndex = 0
 let yesIndex = 1
@@ -143,6 +208,11 @@ let tcrCommits = ["7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM", "ELJFwQv8AVwQ2
 let tcrReveals = ["00009", "00008", "00009"]
 let tcrSaltArr = ["0", "1", "1"]
 
-describe('Test Initialisation', () => {
+let maxVoters = 3
+let majorityCnt = 2
+let newItemFee = amount
+let voteItemFee = Math.round(amount/3)
+
+describe('TCR Test', () => {
 
 })
