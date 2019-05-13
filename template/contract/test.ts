@@ -2,147 +2,147 @@
 // https://github.com/wavesplatform/waves-transactions/blob/master/src/nodeInteraction.ts
 // https://journal.artfuldev.com/unit-testing-node-applications-with-typescript-using-mocha-and-chai-384ef05f32b2
 
-function timeout(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+const seedWithWaves = "sheriff alpha feel salon prosper tackle bracket light mirror famous remind common" //3MtpzbrmeaTCVKkhUGcgZ2nHYPSYUbSfp5A
+const dappAddress = "3Ms9dv5wrt3kPXeT2g9yLM2LhS33CT7iuiQ"
+let amount = 5000000
+let FEE = 500000
 
-let defaultTimeout = 10*1000
+let seeds = [1,2,3].map(function(x){
+    return "user" + x + seedWithWaves + Math.random()
+})
+let addresses = seeds.map(function(x){
+    return address(x)
+})
 
-const seedWithWaves = "scrap lesson remove sample fork catalog juice language twist sound side oppose"
-const dappAddress = address(seedWithWaves) //3MtpzbrmeaTCVKkhUGcgZ2nHYPSYUbSfp5A
-
-let newItemFee = 500000000/100
-let voteFee = (150000000/100)
-
-let amountCreator = 4*(newItemFee + voteFee*2 + 100000000/10)
-const nonce = 199420
-
-let itemId = "1" + "xxx" + Math.random()
-// let itemId = "1xxx0.669258105762421"
-
-const user1Seed = "user1 " + nonce + seedWithWaves + itemId
-const user1Address = address(user1Seed)
-
-const user2Seed = "user2 " + nonce + seedWithWaves + itemId
-const user2Address = address(user2Seed)
-
-const user3Seed = "user3 " + nonce + seedWithWaves + itemId
-const user3Address = address(user3Seed)
-
-const user4Seed = "user4 " + nonce + seedWithWaves + itemId
-const user4Address = address(user4Seed)
-
-
-
-describe('Token Curated Registries test', () => {
-    it('fund users accounts', async function(){
-        await broadcast(transfer({amount: amountCreator, recipient: user1Address, fee: 500000}, seedWithWaves))
-        await broadcast(transfer({amount: amountCreator, recipient: user2Address, fee: 500000}, seedWithWaves))
-        await broadcast(transfer({amount: amountCreator, recipient: user3Address, fee: 500000}, seedWithWaves))
-        await broadcast(transfer({amount: amountCreator, recipient: user4Address, fee: 500000}, seedWithWaves))
-        await timeout(defaultTimeout);
-    })
-    it('deposit funds to the dApp', async function(){
-        let params = {
-            dappAddress: dappAddress,
-            call: {
-                function: 'deposit',
-                args: []
-            },
-            payment: [{ amount: amountCreator/4, asset:null }]
+let defTimeout = 2*20000
+describe('Test Initialisation', () => {
+    it('Check balance', async function(){
+        let amount = await balance(address(seedWithWaves))
+        console.log(address(seedWithWaves) + " | balance:" + (amount/100000000).toFixed(3))
+    }, defTimeout)
+    it('Timetsamp', async function(){
+        let tx = await broadcast(data({ data: [{key: "tms", value: dappAddress}]}, seedWithWaves))
+        await waitForTx(tx.id)
+    }, defTimeout)
+    it('Transfer funds forward', async function(){
+        var txs = addresses.map(function(x){
+            return transfer({amount: 2*amount, recipient: x, fee: FEE}, seedWithWaves)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
         }
-        await broadcast(invokeScript(params, user1Seed))
-        await broadcast(invokeScript(params, user2Seed))
-        await broadcast(invokeScript(params, user3Seed))
-        await broadcast(invokeScript(params, user4Seed))
-        await timeout(defaultTimeout);
-    })
-    it('create an item', async function(){
-        let params = {
-            dappAddress: dappAddress,
-            call: {
-                function: 'addItem',
-                args: [{type: "string", value: itemId}]
-            },
-            payment: []
+        await waitForTx(lastTx.id)
+    }, defTimeout)
+    it('Transfer funds back', async function(){
+        let txs = seeds.map(function(x){
+            return transfer({amount: amount, recipient: address(seedWithWaves), fee: FEE}, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
         }
-        await broadcast(invokeScript(params, user1Seed))
-        await timeout(defaultTimeout);
-    })
-    it('vote: commit for an item', async function(){
-        let lambda = (commit) => {
-            return {
-                dappAddress: dappAddress,
-                call: {
-                    function: 'voteCommit',
-                    args: [{type: "string", value: itemId}, {type: "string", value: commit}]
-                },
+        await waitForTx(lastTx.id)
+    }, defTimeout)
+})
+
+describe('User Invitation', () => {
+    it('Invite user 1 from genesis', async function(){
+        let genesisSeed = "adapt lizard catalog quote palm enhance economy turkey universe cost excess risk"
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"inviteUser",
+                args:[
+                    { type:"string", value: addresses[0] }
+                ]},
                 payment: []
-            }
-        }
-        let hash1 = "7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM"
-        let hash2 = "ELJFwQv8AVwQ2dYKUnS5w3YvxrecBpRLBVMZxyPqszkb"
-        let hash3 = "4uGYBzX16tJqWe5L364CKgrecGhh2BzMMddJPBbB1AEx"
-        await broadcast(invokeScript(lambda(hash1), user2Seed))
-        await broadcast(invokeScript(lambda(hash2), user3Seed))
-        await broadcast(invokeScript(lambda(hash3), user4Seed))
-        await timeout(defaultTimeout);
+            }, genesisSeed)
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
     })
-    it('vote: reveal for a commit', async function(){
-        let lambda = (x, salt) => {
-            return {
-                dappAddress: dappAddress,
-                call: {
-                    function: 'voteReveal',
-                    args: [{type: "string", value: itemId}, {type: "string", value: x}, {type: "string", value: salt}]
-                },
+    it('Signup user 1 (from genesis)', async function(){
+        let datajson = JSON.stringify({"name": "Aleksei Pupyshev", "title": "🖖 Tech-Entrepreneur, DLT/Blockchain Engineering, Consulting, Advocacy"})
+        console.log(datajson)
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"signUp",
+                args:[
+                    { type:"string", value: datajson }
+                ]},
                 payment: []
-            }
-        }
-        let salt1 = "00009"
-        let salt2 = "00008"
-        let salt3 = "00009"
-        let vote1 = "0"
-        let vote2 = "1"
-        let vote3 = "1"
-        await broadcast(invokeScript(lambda(vote1, salt1), user2Seed))
-        await timeout(defaultTimeout/3);
-        await broadcast(invokeScript(lambda(vote2, salt2), user3Seed))
-        await timeout(defaultTimeout/3);
-        await broadcast(invokeScript(lambda(vote3, salt3), user4Seed))
-        await timeout(defaultTimeout/2);
+            }, seeds[0])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
     })
-    it('check results', async function(){
-        let lambda = (address) => {
-            return {
-                dappAddress: dappAddress,
-                call: {
-                    function: 'checkResults',
-                    args: [{type: "string", value: itemId}, {type: "string", value: address}]
-                },
+    it('Invite user 2 from white list', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"inviteUser",
+                args:[
+                    { type:"string", value: addresses[1] }
+                ]},
                 payment: []
-            }
-        }
-        await broadcast(invokeScript(lambda(user2Address), user1Seed))
-        await broadcast(invokeScript(lambda(user3Address), user1Seed))
-        await broadcast(invokeScript(lambda(user4Address), user1Seed))
-        await timeout(defaultTimeout);
+            }, seeds[0])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
     })
-    it('withdraw deposits', async function(){
+    it('Signup user 2 (from whitelisted)', async function(){
+        let datajson = JSON.stringify({"name": "Ksenia Dovganiuk", "title": "Lead Analyst"})
+        console.log(datajson)
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"signUp",
+                args:[
+                    { type:"string", value: datajson }
+                ]},
+                payment: []
+            }, seeds[1])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+    it('(!) Invite user 3 (from not whitelisted not genesis)', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"inviteUser",
+                args:[
+                    { type:"string", value: addresses[2] }
+                ]},
+                payment: []
+            }, seeds[2])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+    it('(!) Signup user 3 (from not whitelisted not genesis)', async function(){
+        let datajson = JSON.stringify({"name": "Elon Musk", "title": "Founder of Tesla & SpaceX"})
+        console.log(datajson)
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"signUp",
+                args:[
+                    { type:"string", value: datajson }
+                ]},
+                payment: []
+            }, seeds[2])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+})
 
-        let lambda = (amount) => {
-            return {
-                dappAddress: dappAddress,
-                call: {
-                    function: 'withdraw',
-                    args: [{type: "integer", value: amount}]
-                },
-                payment: []
-            }
-        }
-        await broadcast(invokeScript(lambda(10), user2Seed))
-        await broadcast(invokeScript(lambda(voteFee + newItemFee/2), user3Seed))
-        await broadcast(invokeScript(lambda(voteFee + newItemFee/2), user4Seed))
-        await timeout(defaultTimeout);
-    })
+// # (GLOBALS) TCR implementation with commit-reveal scheme
+let noIndex = 0
+let yesIndex = 1
+let tcrCommits = ["7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM", "ELJFwQv8AVwQ2dYKUnS5w3YvxrecBpRLBVMZxyPqszkb", "4uGYBzX16tJqWe5L364CKgrecGhh2BzMMddJPBbB1AEx"]
+let tcrReveals = ["00009", "00008", "00009"]
+let tcrSaltArr = ["0", "1", "1"]
+
+describe('Test Initialisation', () => {
+
 })
