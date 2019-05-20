@@ -3,9 +3,10 @@
 // https://journal.artfuldev.com/unit-testing-node-applications-with-typescript-using-mocha-and-chai-384ef05f32b2
 
 const seedWithWaves = "adapt lizard catalog quote palm enhance economy turkey universe cost excess risk" //3Ms9dv5wrt3kPXeT2g9yLM2LhS33CT7iuiQ
-const dappAddress = "3ND2GM4YopwijfEqWtFNPQtLfb6vUzXdtek"
+const dappAddress = "3Mxk4AzuXXbmDH4LWqLVAypSXyATYxJLDis"
 let amount = 5000000
 let FEE = 500000
+
 
 let seeds = [1,2,3].map(function(x){
     return "user" + x + seedWithWaves + Math.random()
@@ -14,6 +15,8 @@ let addresses = seeds.map(function(x){
     return address(x)
 })
 
+let genesisSeed = "adapt lizard catalog quote palm enhance economy turkey universe cost excess risk"
+
 let defTimeout = 2*20000
 describe('Test Initialisation', () => {
     it('Check balance', async function(){
@@ -21,7 +24,7 @@ describe('Test Initialisation', () => {
         console.log(address(seedWithWaves) + " | balance:" + (amount/100000000).toFixed(3))
     }, defTimeout)
     it('Timetsamp', async function(){
-        let tx = await broadcast(data({ data: [{key: "tms", value: dappAddress}]}, seedWithWaves))
+        let tx = await broadcast(data({ data: [{key: "tms", value: dappAddress}], fee: FEE}, seedWithWaves))
         await waitForTx(tx.id)
     }, defTimeout)
     it('Transfer funds forward', async function(){
@@ -30,6 +33,8 @@ describe('Test Initialisation', () => {
         })
         var lastTx = undefined
         for (i = 0; i < txs.length; i++) {
+            console.log((i+1) + ') address : ' + addresses[i]);
+            console.log((i+1) + ') seed : ' + seeds[i]);
             let tx = await broadcast(txs[i])
             lastTx = tx
         }
@@ -50,7 +55,6 @@ describe('Test Initialisation', () => {
 
 describe('User Invitation', () => {
     it('Invite user 1 from genesis', async function(){
-        let genesisSeed = "adapt lizard catalog quote palm enhance economy turkey universe cost excess risk"
         let ts = invokeScript({
             dApp: dappAddress,
             call:{
@@ -199,14 +203,67 @@ describe('dApp Wallet test', () => {
         let tx = await broadcast(ts)
         await waitForTx(tx.id)
     })
+    it('(!) Deposit from not white listed works', async function(){
+        var lastTx = invokeScript({
+                dApp: dappAddress,
+                call:{
+                    function:"deposit",
+                    args:[]},
+                    payment: [{amount: 2*amount, asset:null }]
+            }, seeds[2])
+        await broadcast(lastTx)
+        await waitForTx(lastTx.id)
+    })
+})
+describe('Invite 3th user and deposit for 1th', () => {
+    it('Invite user 3 from genesis', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"inviteUser",
+                args:[
+                    { type:"string", value: addresses[2] }
+                ]},
+                payment: []
+            }, genesisSeed)
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+    it('Signup user 3 (from genesis)', async function(){
+        let datajson = JSON.stringify({"name": "Aleksei Pupyshev", "title": "🖖 Tech-Entrepreneur, DLT/Blockchain Engineering, Consulting, Advocacy"})
+        console.log(datajson)
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"signUp",
+                args:[
+                    { type:"string", value: datajson }
+                ]},
+                payment: []
+            }, seeds[2])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+    it('Deposit 3th user', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"deposit",
+                args:[
+                ]},
+                payment: [{amount: amount, asset:null }]
+            }, seeds[0])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
 })
 
 // # (GLOBALS) TCR implementation with commit-reveal scheme
 let noIndex = 0
 let yesIndex = 1
 let tcrCommits = ["7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM", "ELJFwQv8AVwQ2dYKUnS5w3YvxrecBpRLBVMZxyPqszkb", "4uGYBzX16tJqWe5L364CKgrecGhh2BzMMddJPBbB1AEx"]
-let tcrReveals = ["00009", "00008", "00009"]
-let tcrSaltArr = ["0", "1", "1"]
+let tcrReveals = ["0", "1", "1"]
+let tcrSaltArr = ["00009", "00008", "00009"]
 
 let maxVoters = 3
 let majorityCnt = 2
@@ -220,23 +277,6 @@ let itemData = JSON.stringify({
 })
 
 describe('TCR add new item test', async function(){
-    it('(!) Add new item from not whitelisted user', async function(){
-        let ts = invokeScript({
-            dApp: dappAddress,
-            call:{
-                function:"addItem",
-                args:[
-                    { type:"string", value: itemId},
-                    { type:"integer", value: 3},
-                    { type:"integer", value: 5},
-                    { type:"integer", value: 7},
-                    { type:"string", value: itemData}
-                ]},
-                payment: []
-            }, seeds[2])
-        let tx = await broadcast(ts)
-        await waitForTx(tx.id)
-    })
     it('Add new item from whitelisted user', async function(){
         let ts = invokeScript({
             dApp: dappAddress,
@@ -255,18 +295,69 @@ describe('TCR add new item test', async function(){
         await waitForTx(tx.id)
     })
 })
-describe('TCR Test 2/3 YES', () => {
-    xit('Vote commits 2 YES', async function(){
-
+describe('TCR Test 2/3 YES => YES', () => {
+    it('Vote commits 2 YES and 1 NO', async function(){
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteCommit",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrCommits[i] }
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
     })
-    xit('Vote commits 1 NO', async function(){
-
+    it('Vote reveal NO', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteReveal",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrReveals[0] },
+                    { type:"string", value: tcrSaltArr[0] },
+                ]},
+                payment: []
+            }, seeds[0])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
     })
-    xit('Vote reveal NO', async function(){
-
+    it('(!) Try to close voting after 1st (1/3) NO reveal', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"checkResults",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: addresses[0] },
+                ]},
+                payment: []
+            }, seeds[0])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
     })
-    xit('(!) Try to close voting before after NO reveal', async function(){
-
+    it('(!) Try to expire voting after 1st (1/3) NO reveal, for author account, by NO-user', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"closeExpiredChallenge",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: addresses[1] },
+                ]},
+                payment: []
+            }, seeds[0])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
     })
     xit('Vote reveal 3 YES', async function(){
 

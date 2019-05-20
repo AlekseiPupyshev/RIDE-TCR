@@ -10,6 +10,7 @@ let maxVoters = 3
 let majorityCnt = 2
 let newItemFee = 500000000/1000
 let voteItemFee = 150000000/1000
+let BALANCE = "balance_"
 
 @Callable(i)
 func inviteUser(account: String) = {
@@ -71,16 +72,20 @@ func deposit() = {
             case a:Int => a
             case _ => 0
         }
+        let wlStsCurr = match getString(this, "wl_sts_" + currentKey) {
+            case a:String => a
+            case _ => throw("User has not been waitlisted")
+        }
         let newAmount = currentAmount + pmt.amount
         WriteSet([
-            DataEntry(currentKey, newAmount)
+            DataEntry(BALANCE + currentKey, newAmount)
         ])
    }
 }
 @Callable(i)
 func withdraw(amount: Int) = {
         let currentKey = toBase58String(i.caller.bytes)
-        let currentAmount = match getInteger(this, currentKey) {
+        let currentAmount = match getInteger(this, BALANCE + currentKey) {
             case a:Int => a
             case _ => 0
         }
@@ -90,7 +95,7 @@ func withdraw(amount: Int) = {
     else if (newAmount < 0)
             then throw("Not enough balance")
             else ScriptResult(
-                    WriteSet([DataEntry(currentKey, newAmount)]),
+                    WriteSet([DataEntry(BALANCE + currentKey, newAmount)]),
                     TransferSet([ScriptTransfer(i.caller, amount, unit)])
                 )
     }
@@ -98,35 +103,237 @@ func withdraw(amount: Int) = {
 @Callable(i)
 func addItem(itemId: String, expirationABlock: Int, expirationOne: Int, expirationTwo: Int, datajson: String) = {
     let currentAcc = toBase58String(i.caller.bytes)
-    let wlStsCurr = match getString(this, "wl_sts_" + currentAcc) {
-        case a:String => a
-        case _ => noMark
-    }
-    let currentAmount = match getInteger(this, currentAcc) {
+    let currentAmount = match getInteger(this, BALANCE + currentAcc) {
             case a:Int => a
             case _ => throw("The dApp deposit is not exist")
     }
-    let item = match getString(this, currentAcc) {
-            case a:String => a
+    let item = match getString(this, itemId) {
+            case a:String => throw("An item is already exist")
             case _ => noMark
     }
     if (currentAmount < newItemFee)
         then throw("Not enough funds to add new item")
-    else if (wlStsCurr != "whitelisted")
-        then throw("User has not been waitlisted yet")
-    else if (item != noMark)
-        then throw("An item is already exist")
     else if (expirationABlock < 2 || expirationOne < 3 || expirationTwo < 4)
         then throw("Incorrect time parameters")
     else WriteSet([
-        DataEntry(currentAcc, currentAmount - newItemFee),
+        DataEntry(BALANCE + currentAcc, currentAmount - newItemFee),
         DataEntry("author_" + itemId, currentAcc),
         DataEntry("block_" + itemId, height),
         DataEntry("expiration_block_" + itemId, height + expirationABlock),
         DataEntry("bank_" + itemId, newItemFee),
         DataEntry("status_" + itemId, "new"),
-        DataEntry("jsondata_" + itemId, datajson),
+        DataEntry("datajson_" + itemId, datajson),
         DataEntry("expiration_one_" + itemId, height + expirationOne),
         DataEntry("expiration_two_" + itemId, height + expirationTwo)
+    ])
+}
+@Callable(i)
+func voteCommit(itemId: String, voteHash: String) = {
+    let currentAcc = toBase58String(i.caller.bytes)
+    let currentAmount = match getInteger(this, BALANCE + currentAcc) {
+            case a:Int => a
+            case _ => throw("Zero deposit account")
+    }
+    let expirationKey = "expiration_block_" + itemId
+    let expiration = match getInteger(this, expirationKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let statusKey = "status_" + itemId
+    let status = match getString(this, statusKey) {
+            case a:String => a
+            case _ => throw("An item doesn't exist")
+    }
+    let nCommitsKey = "ncommits_" + itemId
+    let nCommits = match getInteger(this, nCommitsKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let commitKey = "commit_" + itemId + "_" + currentAcc
+    let commit = match getString(this, commitKey) {
+            case a:String => a
+            case _ => noMark
+    }
+    if (currentAmount < 2*voteItemFee)
+        then throw("Not enough funds to vote for a new item")
+    else if (height > expiration)
+        then throw("The challenge has expired")
+    else if (status != "new" && status != "voting_commit")
+        then throw("Wrong item status for 'commit' action")
+    else if (nCommits >= maxVoters)
+        then throw("No more voters for this item")
+    else if (commit != noMark)
+        then throw("Can't vote twice")
+    else WriteSet([
+        DataEntry(BALANCE + currentAcc, currentAmount - 2*voteItemFee),
+        DataEntry(statusKey, "voting_commit"),
+        DataEntry(commitKey, voteHash),
+        DataEntry(nCommitsKey, nCommits + 1)
+    ])
+}
+
+@Callable(i)
+func voteReveal(itemId: String, voteResult: String, salt: String) = {
+    let preCommit = voteResult + salt
+    let rideCommitHash = toBase58String(sha256(toBytes(preCommit)))
+    let currentAcc = toBase58String(i.caller.bytes)
+    let currentAmount = match getInteger(this, BALANCE + currentAcc) {
+            case a:Int => a
+            case _ => 0
+    }
+    let commitKey = "commit_" + itemId + "_" + currentAcc
+    let voteHash = match getString(this, commitKey) {
+            case a:String => a
+            case _ => throw("There is no commit yet")
+    }
+    let revealKey = "reveal_" + itemId + "_" + currentAcc
+    let reveal = match getString(this, revealKey) {
+            case a:String => a
+            case _ => noMark
+    }
+    let yesKey = "cnt_yes_" + itemId
+    let yesCnt = match getInteger(this, yesKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let noKey = "cnt_no_" + itemId
+    let noCnt = match getInteger(this, noKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let nCommitsKey = "ncommits_" + itemId
+    let nCommits = match getInteger(this, nCommitsKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let expirationKey = "expiration_block_" + itemId
+    let expiration = match getInteger(this, expirationKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let statusKey = "status_" + itemId
+    let status = match getString(this, statusKey) {
+            case a:String => a
+            case _ => throw("An item doesn't exist")
+    }
+    let yesDelta = if(voteResult == "1") then 1 else 0
+    let noDelta = if(voteResult == "0") then 1 else 0
+    if (voteHash != rideCommitHash)
+        then throw("Hashes don't match")
+    else if (height > expiration)
+        then throw("The challenge has expired")
+    else if (nCommits < maxVoters)
+        then throw("It's still commit stage")
+    else if (status != "voting_commit" && status != "voting_reveal")
+        then throw("Wrong item status for 'reveal' action")
+    else if (reveal != noMark)
+        then throw("Can't vote twice")
+    else if (voteResult != "1" && voteResult != "0")
+        then throw("Bad vote result format")
+    else WriteSet([
+        DataEntry(BALANCE + currentAcc, currentAmount + voteItemFee),
+        DataEntry(statusKey, "voting_reveal"),
+        DataEntry(revealKey, voteResult),
+        DataEntry(yesKey, yesCnt + yesDelta),
+        DataEntry(noKey, noCnt + noDelta)
+    ])
+}
+@Callable(i)
+func checkResults(itemId: String, account: String) = {
+    let statusKey = "status_" + itemId
+    let revealKey = "reveal_" + itemId + "_" + account
+    let rewardKey = "reward_" + itemId + "_" + account
+    let reward = match getString(this, rewardKey) {
+            case a:String => throw("This account has been checked")
+            case _ => noMark
+    }
+    let reveal = match getString(this, revealKey) {
+            case a:String => a
+            case _ => throw("Account hasn't participated in voting")
+    }
+    let yesKey = "cnt_yes_" + itemId
+    let yesCnt = match getInteger(this, yesKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let noKey = "cnt_no_" + itemId
+    let noCnt = match getInteger(this, noKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let currentAmount = match getInteger(this, BALANCE + account) {
+            case a:Int => a
+            case _ => 0
+    }
+    let finalStatus = if ( yesCnt >= majorityCnt ) then "accepted" else "declined"
+    let isWinner = if( ( reveal == "1" && yesCnt >= majorityCnt ) || ( reveal == "0" && noCnt >= majorityCnt ) ) then 1 else 0
+    let notFullMajority = if( yesCnt == maxVoters || noCnt == maxVoters ) then 0 else 1
+    let rewardStatus = if ( isWinner == 1 ) then "winner" else "looser"
+    let nWinners = if ( yesCnt >= majorityCnt ) then yesCnt else noCnt
+    let nLoosers = maxVoters - nWinners
+    let profit = isWinner*(voteItemFee + notFullMajority*(nLoosers*voteItemFee + newItemFee)/nWinners)
+    if (yesCnt + noCnt < maxVoters)
+        then throw("The voting hasn't finished yet")
+    else WriteSet([
+        DataEntry(statusKey, finalStatus),
+        DataEntry(BALANCE + account, currentAmount + profit),
+        DataEntry(rewardKey, rewardStatus)
+    ])
+}
+@Callable(i)
+func closeExpiredChallenge(itemId: String, account: String) = {
+    let statusKey = "status_" + itemId
+    let status = match getString(this, statusKey) {
+        case a:String => a
+        case _ => noMark
+    }
+    let currentAmount = match getInteger(this, BALANCE + account) {
+        case a:Int => a
+        case _ => 0
+    }
+    let author = match getString(this, "author_" + itemId) {
+        case a:String => a
+        case _ => noMark
+    }
+    let commitKey = "commit_" + itemId + "_" + account
+    let voteHash = match getString(this, commitKey) {
+        case a:String => a
+        case _ => throw("Account hasn't participated in voting")
+    }
+    let revealKey = "reveal_" + itemId + "_" + account
+    let reveal = match getString(this, revealKey) {
+        case a:String => a
+        case _ => noMark
+    }
+    let rewardKey = "reward_" + itemId + "_" + account
+    let reward = match getString(this, rewardKey) {
+            case a:String => throw("This account has been checked")
+            case _ => noMark
+    }
+    let authorDeposit = (if( author ==  account) then 1 else 0)*newItemFee
+    let voteDeposit = (2 - (if( reveal != noMark) then 1 else 0))*voteItemFee
+    let expirationKey = "expiration_block_" + itemId
+    let expiration = match getInteger(this, expirationKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let yesKey = "cnt_yes_" + itemId
+    let yesCnt = match getInteger(this, yesKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    let noKey = "cnt_no_" + itemId
+    let noCnt = match getInteger(this, noKey) {
+            case a:Int => a
+            case _ => 0
+    }
+    if (yesCnt + noCnt == maxVoters)
+        then throw("The voting has already finished")
+    else if (height <= expiration)
+        then throw("The time hasn't expired yet")
+    else WriteSet([
+        DataEntry(statusKey, "expired"),
+        DataEntry(BALANCE + account, currentAmount + authorDeposit + voteDeposit),
+        DataEntry(rewardKey, "expired")
     ])
 }
