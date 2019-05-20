@@ -359,13 +359,45 @@ describe('TCR Test 2/3 YES => YES', () => {
         let tx = await broadcast(ts)
         await waitForTx(tx.id)
     })
-    xit('Vote reveal 3 YES', async function(){
-
+    it('Vote reveal 2 YES', async function(){
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteReveal",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrReveals[i] },
+                    { type:"string", value: tcrSaltArr[i] },
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0+1; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
     })
-    xit('(!) Try to close voting before all reveals', async function(){
-
-    })
-    xit('Check results', async function(){
-
+    it('Check results', async function(){
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"checkResults",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: addresses[i] }
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
     })
 })
