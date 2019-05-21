@@ -29,7 +29,7 @@ describe('Test Initialisation', () => {
     }, defTimeout)
     it('Transfer funds forward', async function(){
         var txs = addresses.map(function(x){
-            return transfer({amount: 4*amount, recipient: x, fee: FEE}, seedWithWaves)
+            return transfer({amount: 10*amount, recipient: x, fee: FEE}, seedWithWaves)
         })
         var lastTx = undefined
         for (i = 0; i < txs.length; i++) {
@@ -259,24 +259,22 @@ describe('Invite 3th user and deposit for 1th', () => {
 })
 
 // # (GLOBALS) TCR implementation with commit-reveal scheme
-let noIndex = 0
-let yesIndex = 1
-let tcrCommits = ["7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM", "ELJFwQv8AVwQ2dYKUnS5w3YvxrecBpRLBVMZxyPqszkb", "4uGYBzX16tJqWe5L364CKgrecGhh2BzMMddJPBbB1AEx"]
-let tcrReveals = ["0", "1", "1"]
-let tcrSaltArr = ["00009", "00008", "00009"]
-
 let maxVoters = 3
 let majorityCnt = 2
 let newItemFee = amount
 let voteItemFee = Math.round(amount/3)
-let itemId = "tcr_item_id_" + Math.random()
 let itemData = JSON.stringify({
     "title": "San Francisco Blockchain Week (SFBW) 2019",
     "description": "San Francisco Blockchain Week is a week of free educational, consumer, and developer focused events that aim to push the boundaries of local blockchain ...",
     "link": "https://sfblockchainweek.io/"
 })
 
-describe('TCR add new item test', async function(){
+describe('TCR Test 2/3 YES => YES', () => {
+    let tcrCommits = ["7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM", "ELJFwQv8AVwQ2dYKUnS5w3YvxrecBpRLBVMZxyPqszkb", "4uGYBzX16tJqWe5L364CKgrecGhh2BzMMddJPBbB1AEx"]
+    let tcrReveals = ["0", "1", "1"]
+    let tcrSaltArr = ["00009", "00008", "00009"]
+    let itemId = "tcr_item_id_" + Math.random()
+
     it('Add new item from whitelisted user', async function(){
         let ts = invokeScript({
             dApp: dappAddress,
@@ -293,10 +291,10 @@ describe('TCR add new item test', async function(){
             }, seeds[1])
         let tx = await broadcast(ts)
         await waitForTx(tx.id)
+        console.log('tcr-item-id: ' + itemId);
     })
-})
-describe('TCR Test 2/3 YES => YES', () => {
     it('Vote commits 2 YES and 1 NO', async function(){
+        this.timeout(30000);
         let txs = seeds.map(function(x, i){
             return invokeScript({
             dApp: dappAddress,
@@ -317,6 +315,7 @@ describe('TCR Test 2/3 YES => YES', () => {
         await waitForTx(lastTx.id)
     })
     it('Vote reveal NO', async function(){
+        this.timeout(30000);
         let ts = invokeScript({
             dApp: dappAddress,
             call:{
@@ -360,6 +359,7 @@ describe('TCR Test 2/3 YES => YES', () => {
         await waitForTx(tx.id)
     })
     it('Vote reveal 2 YES', async function(){
+        this.timeout(30000);
         let txs = seeds.map(function(x, i){
             return invokeScript({
             dApp: dappAddress,
@@ -375,6 +375,287 @@ describe('TCR Test 2/3 YES => YES', () => {
         })
         var lastTx = undefined
         for (i = 0+1; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+    it('Check results', async function(){
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"checkResults",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: addresses[i] }
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+})
+
+describe('TCR Test 2/3 NO => NO', () => {
+    let tcrCommits = ["7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM", "7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM", "4uGYBzX16tJqWe5L364CKgrecGhh2BzMMddJPBbB1AEx"]
+    let tcrReveals = ["0", "0", "1"]
+    let tcrSaltArr = ["00009", "00009", "00009"]
+    let itemId = "tcr_item_id_" + Math.random()
+
+    it('Add new item from whitelisted user', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"addItem",
+                args:[
+                    { type:"string", value: itemId},
+                    { type:"integer", value: 3},
+                    { type:"integer", value: 5},
+                    { type:"integer", value: 7},
+                    { type:"string", value: itemData}
+                ]},
+                payment: []
+            }, seeds[1])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+        console.log('tcr-item-id: ' + itemId);
+    })
+    it('Vote commits 2 NO and 1 YES', async function(){
+        this.timeout(30000);
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteCommit",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrCommits[i] }
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+    it('Vote reveal YES', async function(){
+        this.timeout(30000);
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteReveal",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrReveals[2] },
+                    { type:"string", value: tcrSaltArr[2] },
+                ]},
+                payment: []
+            }, seeds[2])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+    })
+    it('Vote reveal 2 NO', async function(){
+        this.timeout(30000);
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteReveal",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrReveals[i] },
+                    { type:"string", value: tcrSaltArr[i] },
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length-1; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+    it('Check results', async function(){
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"checkResults",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: addresses[i] }
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+})
+
+describe('TCR Test 3/3 NO => NO', () => {
+    let tcrCommits = ["7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM", "7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM", "7EQaF3MgUEBZ8ehXSQnADy3ugh1Xvb8fQDCfpiZhHstM"]
+    let tcrReveals = ["0", "0", "0"]
+    let tcrSaltArr = ["00009", "00009", "00009"]
+    let itemId = "tcr_item_id_" + Math.random()
+
+    it('Add new item from whitelisted user', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"addItem",
+                args:[
+                    { type:"string", value: itemId},
+                    { type:"integer", value: 3},
+                    { type:"integer", value: 5},
+                    { type:"integer", value: 7},
+                    { type:"string", value: itemData}
+                ]},
+                payment: []
+            }, seeds[1])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+        console.log('tcr-item-id: ' + itemId);
+    })
+    it('Vote commits 3 NO and 0 YES', async function(){
+        this.timeout(30000);
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteCommit",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrCommits[i] }
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+    it('Vote reveal 3 NO', async function(){
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteReveal",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrReveals[i] },
+                    { type:"string", value: tcrSaltArr[i] },
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+    it('Check results', async function(){
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"checkResults",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: addresses[i] }
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+})
+
+describe('TCR Test 3/3 YES => YES', () => {
+    let tcrCommits = ["4uGYBzX16tJqWe5L364CKgrecGhh2BzMMddJPBbB1AEx", "4uGYBzX16tJqWe5L364CKgrecGhh2BzMMddJPBbB1AEx", "4uGYBzX16tJqWe5L364CKgrecGhh2BzMMddJPBbB1AEx"]
+    let tcrReveals = ["1", "1", "1"]
+    let tcrSaltArr = ["00009", "00009", "00009"]
+    let itemId = "tcr_item_id_" + Math.random()
+
+    it('Add new item from whitelisted user', async function(){
+        let ts = invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"addItem",
+                args:[
+                    { type:"string", value: itemId},
+                    { type:"integer", value: 3},
+                    { type:"integer", value: 5},
+                    { type:"integer", value: 7},
+                    { type:"string", value: itemData}
+                ]},
+                payment: []
+            }, seeds[1])
+        let tx = await broadcast(ts)
+        await waitForTx(tx.id)
+        console.log('tcr-item-id: ' + itemId);
+    })
+    it('Vote commits 3 YES and 0 NO', async function(){
+        this.timeout(30000);
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteCommit",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrCommits[i] }
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
+            let tx = await broadcast(txs[i])
+            lastTx = tx
+        }
+        await waitForTx(lastTx.id)
+    })
+    it('Vote reveal 3 YES', async function(){
+        let txs = seeds.map(function(x, i){
+            return invokeScript({
+            dApp: dappAddress,
+            call:{
+                function:"voteReveal",
+                args:[
+                    { type:"string", value: itemId },
+                    { type:"string", value: tcrReveals[i] },
+                    { type:"string", value: tcrSaltArr[i] },
+                ]},
+                payment: []
+            }, x)
+        })
+        var lastTx = undefined
+        for (i = 0; i < txs.length; i++) {
             let tx = await broadcast(txs[i])
             lastTx = tx
         }
